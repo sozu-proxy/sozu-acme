@@ -23,6 +23,7 @@ fn main() {
   let certificate = "certificate.pem";
   let key         = "key.pem";
   let config_file = "./config.toml";
+  let app_id      = "app_1234";
 
   let config = Config::load_from_path(config_file).expect("could not parse configuration file");
   let stream = UnixStream::connect(&config.command_socket).expect("could not connect to the command unix socket");
@@ -43,6 +44,11 @@ fn main() {
   let server = Server::http("127.0.0.1:0").expect("could not create HTTP server");
   let address = server.server_addr();
 
+  if !set_up_proxying(&mut channel, app_id, domain, &path, address) {
+    panic!("could not set up proxying to HTTP challenge server");
+  }
+
+  let path2 = path.clone();
   let server_thread = thread::spawn(move || {
     loop {
       let request = match server.recv() {
@@ -66,6 +72,10 @@ fn main() {
   let res = server_thread.join().expect("HTTP server thread failed");
 
   if res {
+    if !remove_proxying(&mut channel, app_id, domain, &path2, address) {
+      println!("could not deactivate proxying");
+    }
+
     sign_and_save(&account, domain, certificate, key).expect("could not save certificate");
   } else {
     println!("did not receive challenge request");
