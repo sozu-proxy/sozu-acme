@@ -85,7 +85,7 @@ fn main() {
 
 
   let config = Config::load_from_path(config_file).expect("could not parse configuration file");
-  let stream = UnixStream::connect(&config.command_socket).expect("could not connect to the command unix socket");
+  let stream = UnixStream::connect(&config.command_socket).expect(&format!("could not connect to the command unix socket: {}", config.command_socket));
   let mut channel: Channel<ConfigMessage,ConfigMessageAnswer> = Channel::new(stream, 10000, 20000);
   channel.set_blocking(true);
 
