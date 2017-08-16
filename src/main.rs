@@ -8,8 +8,8 @@ extern crate pretty_env_logger;
 extern crate sozu_lib as sozu;
 extern crate sozu_command_lib as sozu_command;
 
-use std::thread;
 use std::fs::File;
+use std::{thread,time};
 use std::net::SocketAddr;
 use clap::{App,Arg};
 use mio_uds::UnixStream;
@@ -130,6 +130,7 @@ fn main() {
     false
   });
 
+  thread::sleep(time::Duration::from_millis(100));
   info!("launching validation");
   challenge.validate().expect("could not launch HTTP challenge request");
   let res = server_thread.join().expect("HTTP server thread failed");
