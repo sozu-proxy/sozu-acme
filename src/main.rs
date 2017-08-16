@@ -140,11 +140,12 @@ fn main() {
     }
 
     sign_and_save(&account, domain, certificate, chain, key).expect("could not save certificate");
-    if !add_certificate(&mut channel, app_id, domain, "", certificate, chain, key) {
+    info!("new certificate saved to {}", certificate);
+    /*if !add_certificate(&mut channel, app_id, domain, "", certificate, chain, key) {
       error!("could not add new certificate");
     } else {
       info!("new certificate set up");
-    }
+    }*/
   } else {
     error!("did not receive challenge request");
   }
