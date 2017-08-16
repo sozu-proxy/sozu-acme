@@ -97,7 +97,7 @@ fn main() {
 
   debug!("HTTP challenge token: {} key: {}", challenge.token(), challenge.key_authorization());
 
-  let path              = format!(".well-known/acme-challenge/{}", challenge.token());
+  let path              = format!("/.well-known/acme-challenge/{}", challenge.token());
   let key_authorization = challenge.key_authorization().to_string();
 
   let server = Server::http("127.0.0.1:0").expect("could not create HTTP server");
