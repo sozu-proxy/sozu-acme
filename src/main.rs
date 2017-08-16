@@ -1,3 +1,4 @@
+#[macro_use] extern crate clap;
 extern crate rand;
 extern crate mio_uds;
 extern crate tiny_http;
@@ -6,7 +7,9 @@ extern crate sozu_lib as sozu;
 extern crate sozu_command_lib as sozu_command;
 
 use std::thread;
+use std::fs::File;
 use std::net::SocketAddr;
+use clap::{App,Arg};
 use mio_uds::UnixStream;
 use rand::{thread_rng, Rng};
 use tiny_http::{Server, Response};
@@ -19,13 +22,63 @@ use sozu_command::data::{ConfigCommand,ConfigMessage,ConfigMessageAnswer,ConfigM
 use sozu_command::config::Config;
 
 fn main() {
-  let domain      = "example.com";
-  let email       = "example@example.com";
-  let certificate = "certificate.pem";
-  let chain       = "chain.pem";
-  let key         = "key.pem";
-  let config_file = "./config.toml";
-  let app_id      = "app_1234";
+
+  let matches = App::new("sozu-acme")
+                        .version(crate_version!())
+                        .about("ACME (Let's Encrypt) configuration tool for sozu")
+                        .arg(Arg::with_name("config")
+                            .short("c")
+                            .long("config")
+                            .value_name("FILE")
+                            .help("Sets a custom config file")
+                            .takes_value(true)
+                            .required(true))
+                        .arg(Arg::with_name("domain")
+                            .long("domain")
+                            .value_name("domain name")
+                            .help("application's domain name")
+                            .takes_value(true)
+                            .required(true))
+                        .arg(Arg::with_name("email")
+                            .long("email")
+                            .value_name("registration email")
+                            .help("registration email")
+                            .takes_value(true)
+                            .required(true))
+                        .arg(Arg::with_name("id")
+                            .long("id")
+                            .value_name("Application id")
+                            .help("application identifier")
+                            .takes_value(true)
+                            .required(true))
+                        .arg(Arg::with_name("cert")
+                            .long("certificate")
+                            .value_name("certificate path")
+                            .help("certificate path")
+                            .takes_value(true)
+                            .required(true))
+                        .arg(Arg::with_name("chain")
+                            .long("chain")
+                            .value_name("certificate chain path")
+                            .help("certificate chain path")
+                            .takes_value(true)
+                            .required(true))
+                        .arg(Arg::with_name("key")
+                            .long("key")
+                            .value_name("key path")
+                            .help("key path")
+                            .takes_value(true)
+                            .required(true))
+                        .get_matches();
+
+  let config_file = matches.value_of("config").expect("required config file");
+  let app_id      = matches.value_of("id").expect("required application id");
+  let certificate = matches.value_of("cert").expect("required certificate path");
+  let chain       = matches.value_of("chain").expect("required certificate chain path");
+  let key         = matches.value_of("key").expect("required key path");
+  let domain      = matches.value_of("domain").expect("required domain name");
+  let email       = matches.value_of("email").expect("required registration email");
+
 
   let config = Config::load_from_path(config_file).expect("could not parse configuration file");
   let stream = UnixStream::connect(&config.command_socket).expect("could not connect to the command unix socket");
@@ -99,7 +152,7 @@ fn sign_and_save(account: &Account, domain: &str, certificate: &str, chain: &str
   let cert = account.certificate_signer(&[domain]).sign_certificate()?;
   cert.save_signed_certificate(certificate)?;
   let mut file = File::create(chain)?;
-  cert.write_intermediate_certificate(None, file)?;
+  cert.write_intermediate_certificate(None, &mut file)?;
   cert.save_private_key(key)
 }
 
