@@ -76,7 +76,7 @@ fn main() {
       println!("could not deactivate proxying");
     }
 
-    sign_and_save(&account, domain, certificate, key).expect("could not save certificate");
+    sign_and_save(&account, domain, certificate, chain, key).expect("could not save certificate");
     if !add_certificate(&mut channel, app_id, domain, "", certificate, chain, key) {
       println!("could not add new certificate");
     } else {
@@ -95,9 +95,11 @@ fn generate_account(email: &str) -> Result<Account,Error> {
            .register()
 }
 
-fn sign_and_save(account: &Account, domain: &str, certificate: &str, key: &str) -> Result<(),Error> {
+fn sign_and_save(account: &Account, domain: &str, certificate: &str, chain: &str, key: &str) -> Result<(),Error> {
   let cert = account.certificate_signer(&[domain]).sign_certificate()?;
   cert.save_signed_certificate(certificate)?;
+  let mut file = File::create(chain)?;
+  cert.write_intermediate_certificate(None, file)?;
   cert.save_private_key(key)
 }
 
