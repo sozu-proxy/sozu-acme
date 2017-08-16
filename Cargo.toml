@@ -4,10 +4,12 @@ version = "0.1.0"
 authors = ["Geoffroy Couprie <geo.couprie@gmail.com>"]
 
 [dependencies]
+log = "^0.3"
 rand = "^0.3"
 clap = "^2.19.0"
 mio-uds = "^0.6"
 tiny_http = "^0.5"
 acme-client = "^0.4"
+pretty_env_logger = "^0.1"
 sozu-lib = { git = "https://github.com/sozu-proxy/sozu" }
 sozu-command-lib = { git = "https://github.com/sozu-proxy/sozu" }
