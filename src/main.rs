@@ -11,16 +11,18 @@ use mio_uds::UnixStream;
 use rand::{thread_rng, Rng};
 use tiny_http::{Server, Response};
 use acme_client::error::Error;
-use acme_client::{Account,Challenge,Directory};
+use acme_client::{Account,Directory};
 use sozu::channel::Channel;
-use sozu::messages::{Order, Instance, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint, TcpFront};
-use sozu_command::data::{AnswerData,ConfigCommand,ConfigMessage,ConfigMessageAnswer,ConfigMessageStatus,RunState};
+use sozu::messages::{Order, Instance, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint};
+use sozu_command::certificate::{calculate_fingerprint,split_certificate_chain};
+use sozu_command::data::{ConfigCommand,ConfigMessage,ConfigMessageAnswer,ConfigMessageStatus};
 use sozu_command::config::Config;
 
 fn main() {
   let domain      = "example.com";
   let email       = "example@example.com";
   let certificate = "certificate.pem";
+  let chain       = "chain.pem";
   let key         = "key.pem";
   let config_file = "./config.toml";
   let app_id      = "app_1234";
@@ -29,8 +31,6 @@ fn main() {
   let stream = UnixStream::connect(&config.command_socket).expect("could not connect to the command unix socket");
   let mut channel: Channel<ConfigMessage,ConfigMessageAnswer> = Channel::new(stream, 10000, 20000);
   channel.set_blocking(true);
-
-
 
   let account       = generate_account(email).expect("could not generate account");
   let authorization = account.authorization(domain).expect("could not generate authorization");
@@ -77,6 +77,11 @@ fn main() {
     }
 
     sign_and_save(&account, domain, certificate, key).expect("could not save certificate");
+    if !add_certificate(&mut channel, app_id, domain, "", certificate, chain, key) {
+      println!("could not add new certificate");
+    } else {
+      println!("new certificate set up");
+    }
   } else {
     println!("did not receive challenge request");
   }
@@ -124,6 +129,41 @@ fn remove_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app
     ip_address: server_address.ip().to_string(),
     port: server_address.port()
   }))
+}
+
+fn add_certificate(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app_id: &str, hostname: &str, path_begin: &str, certificate_path: &str, chain_path: &str, key_path: &str) -> bool {
+  match Config::load_file(certificate_path) {
+    Ok(certificate) => {
+      match calculate_fingerprint(certificate.as_bytes()) {
+        Err(e)          => println!("could not calculate fingerprint for certificate: {:?}", e),
+        Ok(fingerprint) => {
+          match Config::load_file(chain_path).map(split_certificate_chain) {
+            Err(e) => println!("could not load certificate chain: {:?}", e),
+            Ok(certificate_chain) => {
+              match Config::load_file(key_path) {
+                Err(e) => println!("could not load key: {:?}", e),
+                Ok(key) => {
+                  return order_command(channel, Order::AddCertificate(CertificateAndKey {
+                    certificate: certificate,
+                    certificate_chain: certificate_chain,
+                    key: key
+                  })) && order_command(channel, Order::AddHttpsFront(HttpsFront {
+                    app_id: String::from(app_id),
+                    hostname: String::from(hostname),
+                    path_begin: String::from(path_begin),
+                    fingerprint: CertFingerprint(fingerprint)
+                  }));
+                }
+              }
+            }
+          }
+        },
+      }
+    },
+    Err(e) => println!("could not load file: {:?}", e)
+  };
+
+  false
 }
 
 fn order_command(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, order: Order) -> bool {
