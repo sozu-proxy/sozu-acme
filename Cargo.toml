@@ -4,5 +4,6 @@ version = "0.1.0"
 authors = ["Geoffroy Couprie <geo.couprie@gmail.com>"]
 
 [dependencies]
+tiny_http = "^0.5"
 acme-client = "^0.4"
 sozu-command-lib = { git = "https://github.com/sozu-proxy/sozu" }
