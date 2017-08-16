@@ -1,0 +1,8 @@
+[package]
+name = "sozu-acme"
+version = "0.1.0"
+authors = ["Geoffroy Couprie <geo.couprie@gmail.com>"]
+
+[dependencies]
+acme-client = "^0.4"
+sozu-command-lib = { git = "https://github.com/sozu-proxy/sozu" }
