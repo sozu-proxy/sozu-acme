@@ -153,7 +153,8 @@ fn main() {
 }
 
 fn generate_account(email: &str) -> Result<Account,Error> {
-  let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")?;
+  //let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")?;
+  let directory = Directory::lets_encrypt()?;
 
   directory.account_registration()
            .email(email)
