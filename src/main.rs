@@ -5,7 +5,6 @@ extern crate mio_uds;
 extern crate tiny_http;
 extern crate acme_client;
 extern crate pretty_env_logger;
-extern crate sozu_lib as sozu;
 extern crate sozu_command_lib as sozu_command;
 
 use std::fs::File;
@@ -17,8 +16,8 @@ use rand::{thread_rng, Rng};
 use tiny_http::{Server, Response};
 use acme_client::error::Error;
 use acme_client::{Account,Directory};
-use sozu::channel::Channel;
-use sozu::messages::{Order, Instance, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint};
+use sozu_command::channel::Channel;
+use sozu_command::messages::{Order, Instance, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint};
 use sozu_command::certificate::{calculate_fingerprint,split_certificate_chain};
 use sozu_command::data::{ConfigCommand,ConfigMessage,ConfigMessageAnswer,ConfigMessageStatus};
 use sozu_command::config::Config;
