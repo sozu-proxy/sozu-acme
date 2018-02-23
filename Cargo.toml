@@ -1,6 +1,6 @@
 [package]
 name = "sozu-acme"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Geoffroy Couprie <geo.couprie@gmail.com>"]
 
 [dependencies]
@@ -11,4 +11,4 @@ mio-uds = "^0.6"
 tiny_http = "^0.5"
 acme-client = "^0.4"
 pretty_env_logger = "^0.1"
-sozu-command-lib = { git = "https://github.com/sozu-proxy/sozu" }
+sozu-command-lib = "^0.5"
