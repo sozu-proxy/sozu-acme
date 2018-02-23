@@ -17,7 +17,7 @@ use tiny_http::{Server, Response};
 use acme_client::error::Error;
 use acme_client::{Account,Directory};
 use sozu_command::channel::Channel;
-use sozu_command::messages::{Order, Instance, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint};
+use sozu_command::messages::{Order, Instance, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint,AddCertificate};
 use sozu_command::certificate::{calculate_fingerprint,split_certificate_chain};
 use sozu_command::data::{ConfigCommand,ConfigMessage,ConfigMessageAnswer,ConfigMessageStatus};
 use sozu_command::config::Config;
@@ -181,6 +181,7 @@ fn set_up_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app
     path_begin: String::from(path_begin)
   })) && order_command(channel, Order::AddInstance(Instance {
     app_id: String::from(app_id),
+    instance_id: format!("{}-0", app_id),
     ip_address: server_address.ip().to_string(),
     port: server_address.port()
   }))
@@ -193,6 +194,7 @@ fn remove_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app
     path_begin: String::from(path_begin)
   })) && order_command(channel, Order::RemoveInstance(Instance {
     app_id: String::from(app_id),
+    instance_id: format!("{}-0", app_id),
     ip_address: server_address.ip().to_string(),
     port: server_address.port()
   }))
@@ -202,18 +204,21 @@ fn add_certificate(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app
   match Config::load_file(certificate_path) {
     Ok(certificate) => {
       match calculate_fingerprint(certificate.as_bytes()) {
-        Err(e)          => error!("could not calculate fingerprint for certificate: {:?}", e),
-        Ok(fingerprint) => {
+        None              => error!("could not calculate fingerprint for certificate"),
+        Some(fingerprint) => {
           match Config::load_file(chain_path).map(split_certificate_chain) {
             Err(e) => error!("could not load certificate chain: {:?}", e),
             Ok(certificate_chain) => {
               match Config::load_file(key_path) {
                 Err(e) => error!("could not load key: {:?}", e),
                 Ok(key) => {
-                  return order_command(channel, Order::AddCertificate(CertificateAndKey {
-                    certificate: certificate,
-                    certificate_chain: certificate_chain,
-                    key: key
+                  return order_command(channel, Order::AddCertificate(AddCertificate {
+                    certificate: CertificateAndKey {
+                      certificate: certificate,
+                      certificate_chain: certificate_chain,
+                      key: key
+                    },
+                    names: vec!(hostname.to_string()),
                   })) && order_command(channel, Order::AddHttpsFront(HttpsFront {
                     app_id: String::from(app_id),
                     hostname: String::from(hostname),
