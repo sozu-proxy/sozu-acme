@@ -4,11 +4,11 @@ version = "0.2.0"
 authors = ["Geoffroy Couprie <geo.couprie@gmail.com>"]
 
 [dependencies]
-log = "^0.3"
+log = "^0.4"
 rand = "^0.3"
 clap = "^2.19.0"
 mio-uds = "^0.6"
-tiny_http = "^0.5"
+tiny_http = "^0.6"
 acme-client = "^0.4"
-pretty_env_logger = "^0.1"
-sozu-command-lib = "^0.5"
+pretty_env_logger = "^0.2"
+sozu-command-lib = "^0.6"

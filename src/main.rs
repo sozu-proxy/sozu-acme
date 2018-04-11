@@ -17,13 +17,13 @@ use tiny_http::{Server, Response};
 use acme_client::error::Error;
 use acme_client::{Account,Directory};
 use sozu_command::channel::Channel;
-use sozu_command::messages::{Order, Instance, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint,AddCertificate};
+use sozu_command::messages::{Order, Backend, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint,AddCertificate};
 use sozu_command::certificate::{calculate_fingerprint,split_certificate_chain};
 use sozu_command::data::{ConfigCommand,ConfigMessage,ConfigMessageAnswer,ConfigMessageStatus};
 use sozu_command::config::Config;
 
 fn main() {
-  pretty_env_logger::init().expect("could not set up pretty_env_logger");
+  pretty_env_logger::init();
   info!("starting up");
 
   let matches = App::new("sozu-acme")
@@ -179,9 +179,9 @@ fn set_up_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app
     app_id: String::from(app_id),
     hostname: String::from(hostname),
     path_begin: String::from(path_begin)
-  })) && order_command(channel, Order::AddInstance(Instance {
+  })) && order_command(channel, Order::AddBackend(Backend {
     app_id: String::from(app_id),
-    instance_id: format!("{}-0", app_id),
+    backend_id: format!("{}-0", app_id),
     ip_address: server_address.ip().to_string(),
     port: server_address.port()
   }))
@@ -192,9 +192,9 @@ fn remove_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app
     app_id: String::from(app_id),
     hostname: String::from(hostname),
     path_begin: String::from(path_begin)
-  })) && order_command(channel, Order::RemoveInstance(Instance {
+  })) && order_command(channel, Order::RemoveBackend(Backend {
     app_id: String::from(app_id),
-    instance_id: format!("{}-0", app_id),
+    backend_id: format!("{}-0", app_id),
     ip_address: server_address.ip().to_string(),
     port: server_address.port()
   }))
@@ -265,8 +265,8 @@ fn order_command(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, order
           },
           ConfigMessageStatus::Ok => {
             match order {
-              Order::AddInstance(_) => info!("backend added : {}", message.message),
-              Order::RemoveInstance(_) => info!("backend removed : {} ", message.message),
+              Order::AddBackend(_) => info!("backend added : {}", message.message),
+              Order::RemoveBackend(_) => info!("backend removed : {} ", message.message),
               Order::AddCertificate(_) => info!("certificate added: {}", message.message),
               Order::RemoveCertificate(_) => info!("certificate removed: {}", message.message),
               Order::AddHttpFront(_) => info!("front added: {}", message.message),
