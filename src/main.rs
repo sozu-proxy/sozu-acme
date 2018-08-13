@@ -17,7 +17,7 @@ use tiny_http::{Server, Response};
 use acme_client::error::Error;
 use acme_client::{Account,Directory};
 use sozu_command::channel::Channel;
-use sozu_command::messages::{Order, Backend, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint,AddCertificate};
+use sozu_command::messages::{Order, Backend, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint, AddCertificate, RemoveBackend};
 use sozu_command::certificate::{calculate_fingerprint,split_certificate_chain};
 use sozu_command::data::{ConfigCommand,ConfigMessage,ConfigMessageAnswer,ConfigMessageStatus};
 use sozu_command::config::Config;
@@ -183,7 +183,9 @@ fn set_up_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app
     app_id: String::from(app_id),
     backend_id: format!("{}-0", app_id),
     ip_address: server_address.ip().to_string(),
-    port: server_address.port()
+    port: server_address.port(),
+    load_balancing_parameters: None,
+    sticky_id: None,
   }))
 }
 
@@ -192,11 +194,11 @@ fn remove_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app
     app_id: String::from(app_id),
     hostname: String::from(hostname),
     path_begin: String::from(path_begin)
-  })) && order_command(channel, Order::RemoveBackend(Backend {
+  })) && order_command(channel, Order::RemoveBackend(RemoveBackend {
     app_id: String::from(app_id),
     backend_id: format!("{}-0", app_id),
     ip_address: server_address.ip().to_string(),
-    port: server_address.port()
+    port: server_address.port(),
   }))
 }
 

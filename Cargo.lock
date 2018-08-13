@@ -878,13 +878,13 @@ dependencies = [
  "mio-uds 0.6.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "pretty_env_logger 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.22 (registry+https://github.com/rust-lang/crates.io-index)",
- "sozu-command-lib 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sozu-command-lib 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "tiny_http 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "sozu-command-lib"
-version = "0.6.0"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "hex 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1238,7 +1238,7 @@ dependencies = [
 "checksum serde_urlencoded 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)" = "e703cef904312097cfceab9ce131ff6bbe09e8c964a0703345a5f49238757bc1"
 "checksum sha2 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)" = "9eb6be24e4c23a84d7184280d2722f7f2731fcdd4a9d886efbfe4413e4847ea0"
 "checksum slab 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)" = "5f9776d6b986f77b35c6cf846c11ad986ff128fe0b2b63a3628e3755e8d3102d"
-"checksum sozu-command-lib 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)" = "50cc33ad9913d20a21ae3f9af660b42f3fc5d7957d41fa7da95b3f4e195211d3"
+"checksum sozu-command-lib 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)" = "c33bc9e2a3055d4825c0a7224ad22b3dff9f02ad9cb646b174b83034a5540ae2"
 "checksum strsim 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "bb4f380125926a99e52bc279241539c018323fab05ad6368b56f93d9369ff550"
 "checksum syn 0.14.8 (registry+https://github.com/rust-lang/crates.io-index)" = "b7bfcbb0c068d0f642a0ffbd5c604965a360a61f99e8add013cef23a838614f3"
 "checksum tempdir 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)" = "15f2b5fb00ccdf689e0149d1b1b3c03fead81c2b37735d812fa8bddbbf41b6d8"
