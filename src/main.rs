@@ -101,9 +101,10 @@ fn main() {
 
   let server = Server::http("127.0.0.1:0").expect("could not create HTTP server");
   let address = server.server_addr();
+  let acme_app_id = generate_app_id(&app_id);
 
   debug!("setting up proxying");
-  if !set_up_proxying(&mut channel, app_id, domain, &path, address) {
+  if !set_up_proxying(&mut channel, &acme_app_id, domain, &path, address) {
     panic!("could not set up proxying to HTTP challenge server");
   }
 
@@ -135,7 +136,7 @@ fn main() {
   let res = server_thread.join().expect("HTTP server thread failed");
 
   if res {
-    if !remove_proxying(&mut channel, app_id, domain, &path2, address) {
+    if !remove_proxying(&mut channel, &acme_app_id, domain, &path2, address) {
       error!("could not deactivate proxying");
     }
 
@@ -171,6 +172,11 @@ fn sign_and_save(account: &Account, domain: &str, certificate: &str, chain: &str
 fn generate_id() -> String {
   let s: String = thread_rng().gen_ascii_chars().take(6).collect();
   format!("ID-{}", s)
+}
+
+fn generate_app_id(app_id: &str) -> String {
+  let s: String = thread_rng().gen_ascii_chars().take(6).collect();
+  format!("{}-ACME-{}", app_id, s)
 }
 
 fn set_up_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app_id: &str, hostname: &str, path_begin: &str, server_address: SocketAddr) -> bool {
