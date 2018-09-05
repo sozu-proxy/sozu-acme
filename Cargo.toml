@@ -1,7 +1,11 @@
 [package]
 name = "sozu-acme"
 version = "0.4.0"
-authors = ["Geoffroy Couprie <geo.couprie@gmail.com>"]
+license = "AGPL-3.0"
+categories = ["command-line-utilities"]
+repository = "https://github.com/sozu-proxy/sozu-acme"
+description = "command line tool to set up or renew Let's Encrypt certificates for sozu HTTP reverse proxy"
+authors = ["Geoffroy Couprie <contact@geoffroycouprie.com>"]
 
 [dependencies]
 log = "^0.4"
