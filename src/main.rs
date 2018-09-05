@@ -72,6 +72,18 @@ fn main() {
                             .help("key path")
                             .takes_value(true)
                             .required(true))
+                        .arg(Arg::with_name("http")
+                            .long("http")
+                            .value_name("HTTP frontend address")
+                            .help("format: IP:port")
+                            .takes_value(true)
+                            .required(true))
+                        .arg(Arg::with_name("https")
+                            .long("https")
+                            .value_name("HTTPS frontend address")
+                            .help("format: IP:port")
+                            .takes_value(true)
+                            .required(true))
                         .get_matches();
 
   let config_file = matches.value_of("config").expect("required config file");
@@ -81,6 +93,8 @@ fn main() {
   let key         = matches.value_of("key").expect("required key path");
   let domain      = matches.value_of("domain").expect("required domain name");
   let email       = matches.value_of("email").expect("required registration email");
+  let http        = matches.value_of("http").expect("required HTTP frontend address").parse::<SocketAddr>().expect("invalid HTTP frontend address format");
+  let https       = matches.value_of("https").expect("required HTTPS frontend address").parse::<SocketAddr>().expect("invalid HTTPS frontend address format");
 
 
   let config = Config::load_from_path(config_file).expect("could not parse configuration file");
@@ -104,7 +118,7 @@ fn main() {
   let acme_app_id = generate_app_id(&app_id);
 
   debug!("setting up proxying");
-  if !set_up_proxying(&mut channel, &acme_app_id, domain, &path, address) {
+  if !set_up_proxying(&mut channel, &http, &acme_app_id, domain, &path, address) {
     panic!("could not set up proxying to HTTP challenge server");
   }
 
@@ -136,13 +150,13 @@ fn main() {
   let res = server_thread.join().expect("HTTP server thread failed");
 
   if res {
-    if !remove_proxying(&mut channel, &acme_app_id, domain, &path2, address) {
+    if !remove_proxying(&mut channel, &http, &acme_app_id, domain, &path2, address) {
       error!("could not deactivate proxying");
     }
 
     sign_and_save(&account, domain, certificate, chain, key).expect("could not save certificate");
     info!("new certificate saved to {}", certificate);
-    if !add_certificate(&mut channel, app_id, domain, "", certificate, chain, key) {
+    if !add_certificate(&mut channel, &https, app_id, domain, "", certificate, chain, key) {
       error!("could not add new certificate");
     } else {
       info!("new certificate set up");
@@ -179,36 +193,40 @@ fn generate_app_id(app_id: &str) -> String {
   format!("{}-ACME-{}", app_id, s)
 }
 
-fn set_up_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app_id: &str, hostname: &str, path_begin: &str, server_address: SocketAddr) -> bool {
+fn set_up_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
+  server_address: SocketAddr) -> bool {
 
   order_command(channel, Order::AddHttpFront(HttpFront {
+    address: frontend.clone(),
     app_id: String::from(app_id),
     hostname: String::from(hostname),
     path_begin: String::from(path_begin)
   })) && order_command(channel, Order::AddBackend(Backend {
     app_id: String::from(app_id),
     backend_id: format!("{}-0", app_id),
-    ip_address: server_address.ip().to_string(),
-    port: server_address.port(),
+    address: server_address,
     load_balancing_parameters: None,
     sticky_id: None,
+    backup: None,
   }))
 }
 
-fn remove_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app_id: &str, hostname: &str, path_begin: &str, server_address: SocketAddr) -> bool {
+fn remove_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
+  server_address: SocketAddr) -> bool {
   order_command(channel, Order::RemoveHttpFront(HttpFront {
+    address: frontend.clone(),
     app_id: String::from(app_id),
     hostname: String::from(hostname),
     path_begin: String::from(path_begin)
   })) && order_command(channel, Order::RemoveBackend(RemoveBackend {
     app_id: String::from(app_id),
     backend_id: format!("{}-0", app_id),
-    ip_address: server_address.ip().to_string(),
-    port: server_address.port(),
+    address: server_address,
   }))
 }
 
-fn add_certificate(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app_id: &str, hostname: &str, path_begin: &str, certificate_path: &str, chain_path: &str, key_path: &str) -> bool {
+fn add_certificate(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
+  certificate_path: &str, chain_path: &str, key_path: &str) -> bool {
   match Config::load_file(certificate_path) {
     Ok(certificate) => {
       match calculate_fingerprint(certificate.as_bytes()) {
@@ -221,6 +239,7 @@ fn add_certificate(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app
                 Err(e) => error!("could not load key: {:?}", e),
                 Ok(key) => {
                   return order_command(channel, Order::AddCertificate(AddCertificate {
+                    front: frontend.clone(),
                     certificate: CertificateAndKey {
                       certificate: certificate,
                       certificate_chain: certificate_chain,
@@ -228,6 +247,7 @@ fn add_certificate(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app
                     },
                     names: vec!(hostname.to_string()),
                   })) && order_command(channel, Order::AddHttpsFront(HttpsFront {
+                    address: frontend.clone(),
                     app_id: String::from(app_id),
                     hostname: String::from(hostname),
                     path_begin: String::from(path_begin),

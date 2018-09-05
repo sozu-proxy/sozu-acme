@@ -19,6 +19,8 @@ sozu-acme --config      /path/to/sozu/config.toml # configuration file for sozu
           --domain      example.com               # domain name for which the certificate will be generated
           --email       example@example.com       # registration email
           --id          app_example               # application id for sozu
+          --http        1.2.3.4:80                # frontend HTTP address (for the challenge)
+          --https       1.2.3.4:443               # frontend HTTPS address (for the challenge)
 ```
 
 this tool will perform the following actions:
