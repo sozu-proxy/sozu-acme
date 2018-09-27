@@ -17,9 +17,9 @@ use tiny_http::{Server, Response};
 use acme_client::error::Error;
 use acme_client::{Account,Directory};
 use sozu_command::channel::Channel;
-use sozu_command::messages::{Order, Backend, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint, AddCertificate, RemoveBackend};
+use sozu_command::proxy::{ProxyRequestData, Backend, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint, AddCertificate, RemoveBackend};
 use sozu_command::certificate::{calculate_fingerprint,split_certificate_chain};
-use sozu_command::data::{ConfigCommand,ConfigMessage,ConfigMessageAnswer,ConfigMessageStatus};
+use sozu_command::command::{CommandRequestData,CommandRequest,CommandResponse,CommandStatus};
 use sozu_command::config::Config;
 
 fn main() {
@@ -99,7 +99,7 @@ fn main() {
 
   let config = Config::load_from_path(config_file).expect("could not parse configuration file");
   let stream = UnixStream::connect(&config.command_socket).expect(&format!("could not connect to the command unix socket: {}", config.command_socket));
-  let mut channel: Channel<ConfigMessage,ConfigMessageAnswer> = Channel::new(stream, 10000, 20000);
+  let mut channel: Channel<CommandRequest,CommandResponse> = Channel::new(stream, 10000, 20000);
   channel.set_blocking(true);
 
   info!("got channel, connecting to Let's Encrypt");
@@ -193,15 +193,15 @@ fn generate_app_id(app_id: &str) -> String {
   format!("{}-ACME-{}", app_id, s)
 }
 
-fn set_up_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
+fn set_up_proxying(channel: &mut Channel<CommandRequest,CommandResponse>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
   server_address: SocketAddr) -> bool {
 
-  order_command(channel, Order::AddHttpFront(HttpFront {
+  order_command(channel, ProxyRequestData::AddHttpFront(HttpFront {
     address: frontend.clone(),
     app_id: String::from(app_id),
     hostname: String::from(hostname),
     path_begin: String::from(path_begin)
-  })) && order_command(channel, Order::AddBackend(Backend {
+  })) && order_command(channel, ProxyRequestData::AddBackend(Backend {
     app_id: String::from(app_id),
     backend_id: format!("{}-0", app_id),
     address: server_address,
@@ -211,21 +211,21 @@ fn set_up_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, fro
   }))
 }
 
-fn remove_proxying(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
+fn remove_proxying(channel: &mut Channel<CommandRequest,CommandResponse>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
   server_address: SocketAddr) -> bool {
-  order_command(channel, Order::RemoveHttpFront(HttpFront {
+  order_command(channel, ProxyRequestData::RemoveHttpFront(HttpFront {
     address: frontend.clone(),
     app_id: String::from(app_id),
     hostname: String::from(hostname),
     path_begin: String::from(path_begin)
-  })) && order_command(channel, Order::RemoveBackend(RemoveBackend {
+  })) && order_command(channel, ProxyRequestData::RemoveBackend(RemoveBackend {
     app_id: String::from(app_id),
     backend_id: format!("{}-0", app_id),
     address: server_address,
   }))
 }
 
-fn add_certificate(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
+fn add_certificate(channel: &mut Channel<CommandRequest,CommandResponse>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
   certificate_path: &str, chain_path: &str, key_path: &str) -> bool {
   match Config::load_file(certificate_path) {
     Ok(certificate) => {
@@ -238,7 +238,7 @@ fn add_certificate(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, fro
               match Config::load_file(key_path) {
                 Err(e) => error!("could not load key: {:?}", e),
                 Ok(key) => {
-                  return order_command(channel, Order::AddCertificate(AddCertificate {
+                  return order_command(channel, ProxyRequestData::AddCertificate(AddCertificate {
                     front: frontend.clone(),
                     certificate: CertificateAndKey {
                       certificate: certificate,
@@ -246,7 +246,7 @@ fn add_certificate(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, fro
                       key: key
                     },
                     names: vec!(hostname.to_string()),
-                  })) && order_command(channel, Order::AddHttpsFront(HttpsFront {
+                  })) && order_command(channel, ProxyRequestData::AddHttpsFront(HttpsFront {
                     address: frontend.clone(),
                     app_id: String::from(app_id),
                     hostname: String::from(hostname),
@@ -266,11 +266,11 @@ fn add_certificate(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, fro
   false
 }
 
-fn order_command(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, order: Order) -> bool {
+fn order_command(channel: &mut Channel<CommandRequest,CommandResponse>, order: ProxyRequestData) -> bool {
   let id = generate_id();
-  channel.write_message(&ConfigMessage::new(
+  channel.write_message(&CommandRequest::new(
     id.clone(),
-    ConfigCommand::ProxyConfiguration(order.clone()),
+    CommandRequestData::Proxy(order.clone()),
     None,
   ));
 
@@ -282,23 +282,23 @@ fn order_command(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, order
           panic!("received message with invalid id: {:?}", message);
         }
         match message.status {
-          ConfigMessageStatus::Processing => {
+          CommandStatus::Processing => {
             // do nothing here
             // for other messages, we would loop over read_message
             // until an error or ok message was sent
           },
-          ConfigMessageStatus::Error => {
+          CommandStatus::Error => {
             error!("could not execute order: {}", message.message);
             return false;
           },
-          ConfigMessageStatus::Ok => {
+          CommandStatus::Ok => {
             match order {
-              Order::AddBackend(_) => info!("backend added : {}", message.message),
-              Order::RemoveBackend(_) => info!("backend removed : {} ", message.message),
-              Order::AddCertificate(_) => info!("certificate added: {}", message.message),
-              Order::RemoveCertificate(_) => info!("certificate removed: {}", message.message),
-              Order::AddHttpFront(_) => info!("front added: {}", message.message),
-              Order::RemoveHttpFront(_) => info!("front removed: {}", message.message),
+              ProxyRequestData::AddBackend(_) => info!("backend added : {}", message.message),
+              ProxyRequestData::RemoveBackend(_) => info!("backend removed : {} ", message.message),
+              ProxyRequestData::AddCertificate(_) => info!("certificate added: {}", message.message),
+              ProxyRequestData::RemoveCertificate(_) => info!("certificate removed: {}", message.message),
+              ProxyRequestData::AddHttpFront(_) => info!("front added: {}", message.message),
+              ProxyRequestData::RemoveHttpFront(_) => info!("front removed: {}", message.message),
               _ => {
                 // do nothing for now 
               }
