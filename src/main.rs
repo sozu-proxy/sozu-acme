@@ -17,7 +17,8 @@ use tiny_http::{Server, Response};
 use acme_client::error::Error;
 use acme_client::{Account,Directory};
 use sozu_command::channel::Channel;
-use sozu_command::proxy::{ProxyRequestData, Backend, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint, AddCertificate, RemoveBackend};
+use sozu_command::proxy::{ProxyRequestData, Backend, HttpFront,
+  CertificateAndKey, CertFingerprint, AddCertificate, RemoveBackend};
 use sozu_command::certificate::{calculate_fingerprint,split_certificate_chain};
 use sozu_command::command::{CommandRequestData,CommandRequest,CommandResponse,CommandStatus};
 use sozu_command::config::Config;
@@ -156,7 +157,7 @@ fn main() {
 
     sign_and_save(&account, domain, certificate, chain, key).expect("could not save certificate");
     info!("new certificate saved to {}", certificate);
-    if !add_certificate(&mut channel, &https, app_id, domain, "", certificate, chain, key) {
+    if !add_certificate(&mut channel, &https, domain, certificate, chain, key) {
       error!("could not add new certificate");
     } else {
       info!("new certificate set up");
@@ -225,7 +226,7 @@ fn remove_proxying(channel: &mut Channel<CommandRequest,CommandResponse>, fronte
   }))
 }
 
-fn add_certificate(channel: &mut Channel<CommandRequest,CommandResponse>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
+fn add_certificate(channel: &mut Channel<CommandRequest,CommandResponse>, frontend: &SocketAddr, hostname: &str,
   certificate_path: &str, chain_path: &str, key_path: &str) -> bool {
   match Config::load_file(certificate_path) {
     Ok(certificate) => {
@@ -246,12 +247,6 @@ fn add_certificate(channel: &mut Channel<CommandRequest,CommandResponse>, fronte
                       key: key
                     },
                     names: vec!(hostname.to_string()),
-                  })) && order_command(channel, ProxyRequestData::AddHttpsFront(HttpsFront {
-                    address: frontend.clone(),
-                    app_id: String::from(app_id),
-                    hostname: String::from(hostname),
-                    path_begin: String::from(path_begin),
-                    fingerprint: CertFingerprint(fingerprint)
                   }));
                 }
               }
