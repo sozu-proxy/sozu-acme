@@ -18,7 +18,8 @@ use acme_client::error::Error;
 use acme_client::{Account,Directory};
 use sozu_command::channel::Channel;
 use sozu_command::proxy::{ProxyRequestData, Backend, HttpFront,
-  CertificateAndKey, CertFingerprint, AddCertificate, RemoveBackend};
+  CertificateAndKey, CertFingerprint, AddCertificate, RemoveBackend,
+  ReplaceCertificate};
 use sozu_command::certificate::{calculate_fingerprint,split_certificate_chain};
 use sozu_command::command::{CommandRequestData,CommandRequest,CommandResponse,CommandStatus};
 use sozu_command::config::Config;
@@ -55,6 +56,11 @@ fn main() {
                             .help("application identifier")
                             .takes_value(true)
                             .required(true))
+                        .arg(Arg::with_name("old-cert")
+                            .long("old-certificate")
+                            .value_name("previous certificate path")
+                            .help("path to the previous certificate")
+                            .takes_value(true))
                         .arg(Arg::with_name("cert")
                             .long("certificate")
                             .value_name("certificate path")
@@ -90,6 +96,7 @@ fn main() {
   let config_file = matches.value_of("config").expect("required config file");
   let app_id      = matches.value_of("id").expect("required application id");
   let certificate = matches.value_of("cert").expect("required certificate path");
+  let old_cert    = matches.value_of("old-cert");
   let chain       = matches.value_of("chain").expect("required certificate chain path");
   let key         = matches.value_of("key").expect("required key path");
   let domain      = matches.value_of("domain").expect("required domain name");
@@ -97,6 +104,8 @@ fn main() {
   let http        = matches.value_of("http").expect("required HTTP frontend address").parse::<SocketAddr>().expect("invalid HTTP frontend address format");
   let https       = matches.value_of("https").expect("required HTTPS frontend address").parse::<SocketAddr>().expect("invalid HTTPS frontend address format");
 
+  let old_fingerprint = old_cert.and_then(|path| Config::load_file_bytes(path).ok())
+    .and_then(|file| calculate_fingerprint(&file));
 
   let config = Config::load_from_path(config_file).expect("could not parse configuration file");
   let stream = UnixStream::connect(&config.command_socket).expect(&format!("could not connect to the command unix socket: {}", config.command_socket));
@@ -157,7 +166,7 @@ fn main() {
 
     sign_and_save(&account, domain, certificate, chain, key).expect("could not save certificate");
     info!("new certificate saved to {}", certificate);
-    if !add_certificate(&mut channel, &https, domain, certificate, chain, key) {
+    if !add_certificate(&mut channel, &https, domain, certificate, chain, key, old_fingerprint) {
       error!("could not add new certificate");
     } else {
       info!("new certificate set up");
@@ -226,39 +235,55 @@ fn remove_proxying(channel: &mut Channel<CommandRequest,CommandResponse>, fronte
   }))
 }
 
-fn add_certificate(channel: &mut Channel<CommandRequest,CommandResponse>, frontend: &SocketAddr, hostname: &str,
-  certificate_path: &str, chain_path: &str, key_path: &str) -> bool {
-  match Config::load_file(certificate_path) {
-    Ok(certificate) => {
-      match calculate_fingerprint(certificate.as_bytes()) {
-        None              => error!("could not calculate fingerprint for certificate"),
-        Some(fingerprint) => {
-          match Config::load_file(chain_path).map(split_certificate_chain) {
-            Err(e) => error!("could not load certificate chain: {:?}", e),
-            Ok(certificate_chain) => {
-              match Config::load_file(key_path) {
-                Err(e) => error!("could not load key: {:?}", e),
-                Ok(key) => {
-                  return order_command(channel, ProxyRequestData::AddCertificate(AddCertificate {
-                    front: frontend.clone(),
-                    certificate: CertificateAndKey {
-                      certificate: certificate,
-                      certificate_chain: certificate_chain,
-                      key: key
-                    },
-                    names: vec!(hostname.to_string()),
-                  }));
-                }
-              }
-            }
-          }
-        },
-      }
+fn add_certificate(channel: &mut Channel<CommandRequest,CommandResponse>,
+  frontend: &SocketAddr, hostname: &str,
+  certificate_path: &str, chain_path: &str, key_path: &str,
+  old_fingerprint: Option<Vec<u8>>) -> bool {
+
+  let certificate = match Config::load_file(certificate_path) {
+    Err(e) => {
+      error!("could not load certificate: {:?}", e);
+      return false;
     },
-    Err(e) => error!("could not load file: {:?}", e)
+    Ok(c) => c,
+  };
+  let key = match Config::load_file(key_path) {
+    Err(e) => {
+      error!("could not load key: {:?}", e);
+      return false;
+    },
+    Ok(k) => k,
+  };
+  let certificate_chain = match Config::load_file(chain_path).map(split_certificate_chain) {
+    Err(e) => {
+      error!("could not load certificate chain: {:?}", e);
+      return false;
+    },
+    Ok(c) => c,
   };
 
-  false
+  match old_fingerprint {
+    None => return order_command(channel, ProxyRequestData::AddCertificate(AddCertificate {
+      front: frontend.clone(),
+      certificate: CertificateAndKey {
+        certificate: certificate,
+        certificate_chain: certificate_chain,
+        key: key
+      },
+      names: vec!(hostname.to_string()),
+    })),
+    Some(f) => return order_command(channel, ProxyRequestData::ReplaceCertificate(ReplaceCertificate {
+      front: frontend.clone(),
+      new_certificate: CertificateAndKey {
+        certificate: certificate,
+        certificate_chain: certificate_chain,
+        key: key
+      },
+      old_fingerprint: CertFingerprint(f),
+      old_names: vec!(hostname.to_string()),
+      new_names: vec!(hostname.to_string()),
+    })),
+  }
 }
 
 fn order_command(channel: &mut Channel<CommandRequest,CommandResponse>, order: ProxyRequestData) -> bool {
