@@ -7,22 +7,24 @@ extern crate acme_client;
 extern crate pretty_env_logger;
 extern crate sozu_command_lib as sozu_command;
 
-use std::fs::File;
-use std::{thread,time};
-use std::net::SocketAddr;
-use clap::{App,Arg};
+use std::{
+  iter, thread, time,
+  fs::File,
+  net::SocketAddr
+};
+use clap::{App, Arg};
 use mio_uds::UnixStream;
-use rand::{thread_rng, Rng};
+use rand::{thread_rng, Rng, distributions::Alphanumeric};
 use tiny_http::{Server, Response};
-use acme_client::error::Error;
-use acme_client::{Account,Directory};
+use acme_client::{error::Error, Account, Directory};
 use sozu_command::channel::Channel;
-use sozu_command::proxy::{ProxyRequestData, Backend, HttpFront,
-  CertificateAndKey, CertFingerprint, AddCertificate, RemoveBackend,
-  ReplaceCertificate};
-use sozu_command::certificate::{calculate_fingerprint,split_certificate_chain};
-use sozu_command::command::{CommandRequestData,CommandRequest,CommandResponse,CommandStatus};
-use sozu_command::config::Config;
+use sozu_command::{
+  config::Config,
+  certificate::{calculate_fingerprint, split_certificate_chain},
+  command::{CommandRequestData, CommandRequest, CommandResponse, CommandStatus},
+  proxy::{ProxyRequestData, Backend, HttpFront, CertificateAndKey, CertFingerprint,
+    AddCertificate, RemoveBackend, ReplaceCertificate},
+};
 
 fn main() {
   pretty_env_logger::init();
@@ -194,12 +196,12 @@ fn sign_and_save(account: &Account, domain: &str, certificate: &str, chain: &str
 }
 
 fn generate_id() -> String {
-  let s: String = thread_rng().gen_ascii_chars().take(6).collect();
+  let s: String = iter::repeat(()).map(|()| thread_rng().sample(Alphanumeric)).take(6).collect();
   format!("ID-{}", s)
 }
 
 fn generate_app_id(app_id: &str) -> String {
-  let s: String = thread_rng().gen_ascii_chars().take(6).collect();
+  let s: String = iter::repeat(()).map(|()| thread_rng().sample(Alphanumeric)).take(6).collect();
   format!("{}-ACME-{}", app_id, s)
 }
 

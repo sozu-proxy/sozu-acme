@@ -1,6 +1,6 @@
 [package]
 name = "sozu-acme"
-version = "0.6.0"
+version = "0.7.0"
 license = "AGPL-3.0"
 categories = ["command-line-utilities"]
 repository = "https://github.com/sozu-proxy/sozu-acme"
@@ -9,10 +9,10 @@ authors = ["Geoffroy Couprie <contact@geoffroycouprie.com>"]
 
 [dependencies]
 log = "^0.4"
-rand = "^0.5"
+rand = "^0.6"
 clap = "^2.19.0"
 mio-uds = "^0.6"
 tiny_http = "^0.6"
 acme-client = "^0.5"
 pretty_env_logger = "^0.2"
-sozu-command-lib = "^0.10"
+sozu-command-lib = "^0.11"
