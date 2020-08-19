@@ -3,20 +3,23 @@
 extern crate rand;
 extern crate mio_uds;
 extern crate tiny_http;
-extern crate acme_client;
+extern crate acme_lib;
 extern crate pretty_env_logger;
 extern crate sozu_command_lib as sozu_command;
 
 use std::{
   iter, thread, time,
   fs::File,
-  net::SocketAddr
+  net::SocketAddr,
+  io::Write,
 };
 use clap::{App, Arg};
 use mio_uds::UnixStream;
 use rand::{thread_rng, Rng, distributions::Alphanumeric};
 use tiny_http::{Server, Response};
-use acme_client::{error::Error, Account, Directory};
+use acme_lib::{Error, Directory, DirectoryUrl};
+use acme_lib::persist::FilePersist;
+use acme_lib::create_p384_key;
 use sozu_command::channel::Channel;
 use sozu_command::{
   config::Config,
@@ -116,83 +119,122 @@ fn main() {
 
   info!("got channel, connecting to Let's Encrypt");
 
-  let account       = generate_account(email).expect("could not generate account");
-  let authorization = account.authorization(domain).expect("could not generate authorization");
-  let challenge     = authorization.get_http_challenge().expect("HTTP challenge not found");
+  // Use DirectoryUrl::LetsEncrypStaging for dev/testing
+  //let url = DirectoryUrl::LetsEncryptStaging;
+  let url = DirectoryUrl::LetsEncrypt;
 
-  debug!("HTTP challenge token: {} key: {}", challenge.token(), challenge.key_authorization());
+  let persist = FilePersist::new(".");
+  // Create a directory entrypoint.
+  let dir = Directory::from_url(persist, url).unwrap();
+  // Reads the private account key from persistence, or
+  // creates a new one before accessing the API to establish
+  // that it's there.
+  let acc = dir.account(email).unwrap();
 
-  let path              = format!("/.well-known/acme-challenge/{}", challenge.token());
-  let key_authorization = challenge.key_authorization().to_string();
+  // Order a new TLS certificate for a domain.
+  let mut ord_new = acc.new_order(domain, &[]).unwrap();
 
-  let server = Server::http("127.0.0.1:0").expect("could not create HTTP server");
-  let address = server.server_addr();
-  let acme_app_id = generate_app_id(&app_id);
+  // If the ownership of the domain(s) have already been
+  // authorized in a previous order, you might be able to
+  // skip validation. The ACME API provider decides.
+  let ord_csr = loop {
+    // are we done?
+    if let Some(ord_csr) = ord_new.confirm_validations() {
+      break ord_csr;
+    }
 
-  debug!("setting up proxying");
-  if !set_up_proxying(&mut channel, &http, &acme_app_id, domain, &path, address) {
-    panic!("could not set up proxying to HTTP challenge server");
-  }
+    // Get the possible authorizations (for a single domain
+    // this will only be one element).
+    let auths = ord_new.authorizations().unwrap();
+    let auth = &auths[0];
+    let challenge = auth.http_challenge();
+    let challenge_token = challenge.http_token();
 
-  let path2 = path.clone();
-  let server_thread = thread::spawn(move || {
-    info!("HTTP server started");
-    loop {
-      let request = match server.recv() {
-        Ok(rq) => rq,
-        Err(e) => { error!("error: {}", e); break }
-      };
+    let path = format!("/.well-known/acme-challenge/{}", challenge_token);
+    let key_authorization = challenge.http_proof();
+    debug!("HTTP challenge token: {} key: {}", challenge_token, key_authorization);
 
-      info!("got request to URL: {}", request.url());
-      if request.url() == path {
-        request.respond(Response::from_data(key_authorization.as_bytes()).with_status_code(200));
-        info!("challenge request answered, stopping HTTP server");
-        return true;
-      } else {
-        request.respond(Response::from_data(&b"not found"[..]).with_status_code(404));
+    let server = Server::http("127.0.0.1:0").expect("could not create HTTP server");
+    let address = server.server_addr();
+    let acme_app_id = generate_app_id(&app_id);
+
+    debug!("setting up proxying");
+    if !set_up_proxying(&mut channel, &http, &acme_app_id, domain, &path, address) {
+      panic!("could not set up proxying to HTTP challenge server");
+    }
+
+    let path2 = path.clone();
+    let server_thread = thread::spawn(move || {
+      info!("HTTP server started");
+      loop {
+        let request = match server.recv() {
+          Ok(rq) => rq,
+          Err(e) => { error!("error: {}", e); break }
+        };
+
+        info!("got request to URL: {}", request.url());
+        if request.url() == path {
+          request.respond(Response::from_data(key_authorization.as_bytes()).with_status_code(200));
+          info!("challenge request answered");
+          // the challenge can be called multiple times
+          //return true;
+        } else {
+          request.respond(Response::from_data(&b"not found"[..]).with_status_code(404));
+        }
       }
-    }
 
-    false
-  });
+      false
+    });
 
-  thread::sleep(time::Duration::from_millis(100));
-  info!("launching validation");
-  challenge.validate().expect("could not launch HTTP challenge request");
-  let res = server_thread.join().expect("HTTP server thread failed");
+    thread::sleep(time::Duration::from_millis(100));
 
-  if res {
-    if !remove_proxying(&mut channel, &http, &acme_app_id, domain, &path2, address) {
-      error!("could not deactivate proxying");
-    }
+    challenge.validate(2000).unwrap();
+    info!("challenge validated");
+    ord_new.refresh().unwrap();
 
-    sign_and_save(&account, domain, certificate, chain, key).expect("could not save certificate");
-    info!("new certificate saved to {}", certificate);
-    if !add_certificate(&mut channel, &https, domain, certificate, chain, key, old_fingerprint) {
-      error!("could not add new certificate");
-    } else {
-      info!("new certificate set up");
-    }
+    //let res = server_thread.join().expect("HTTP server thread failed");
+    //if res {
+      if !remove_proxying(&mut channel, &http, &acme_app_id, domain, &path2, address) {
+        error!("could not deactivate proxying");
+        panic!();
+      }
+    //}
+  };
+
+  // Ownership is proven. Create a private key for
+  // the certificate. These are provided for convenience, you
+  // can provide your own keypair instead if you want.
+  let pkey_pri = create_p384_key();
+
+  // Submit the CSR. This causes the ACME provider to enter a
+  // state of "processing" that must be polled until the
+  // certificate is either issued or rejected. Again we poll
+  // for the status change.
+  let ord_cert =
+    ord_csr.finalize_pkey(pkey_pri, 5000).unwrap();
+
+  // Now download the certificate. Also stores the cert in
+  // the persistence.
+  let cert = ord_cert.download_and_save_cert().unwrap();
+
+  info!("got cert: \n{}", cert.certificate());
+  let certificates = sozu_command::certificate::split_certificate_chain(cert.certificate().to_string());
+  let mut file = File::create(certificate).unwrap();
+  file.write_all(certificates[0].as_bytes());
+  //FIXME: there may be more than 1 cert in the chain
+  let mut file = File::create(chain).unwrap();
+  file.write_all(certificates[1].as_bytes());
+  let mut file = File::create(key).unwrap();
+  file.write_all(cert.private_key().as_bytes());
+
+  info!("saved cert and key");
+  if !add_certificate(&mut channel, &https, domain, certificate, chain, key, old_fingerprint) {
+    error!("could not add new certificate");
   } else {
-    error!("did not receive challenge request");
+    info!("added new certificate");
   }
-}
 
-fn generate_account(email: &str) -> Result<Account,Error> {
-  //let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")?;
-  let directory = Directory::lets_encrypt()?;
-
-  directory.account_registration()
-           .email(email)
-           .register()
-}
-
-fn sign_and_save(account: &Account, domain: &str, certificate: &str, chain: &str, key: &str) -> Result<(),Error> {
-  let cert = account.certificate_signer(&[domain]).sign_certificate()?;
-  cert.save_signed_certificate(certificate)?;
-  let mut file = File::create(chain)?;
-  cert.write_intermediate_certificate(None, &mut file)?;
-  cert.save_private_key(key)
+  info!("DONE");
 }
 
 fn generate_id() -> String {
@@ -268,18 +310,18 @@ fn add_certificate(channel: &mut Channel<CommandRequest,CommandResponse>,
     None => return order_command(channel, ProxyRequestData::AddCertificate(AddCertificate {
       front: frontend.clone(),
       certificate: CertificateAndKey {
-        certificate: certificate,
-        certificate_chain: certificate_chain,
-        key: key
+        certificate,
+        certificate_chain,
+        key
       },
       names: vec!(hostname.to_string()),
     })),
     Some(f) => return order_command(channel, ProxyRequestData::ReplaceCertificate(ReplaceCertificate {
       front: frontend.clone(),
       new_certificate: CertificateAndKey {
-        certificate: certificate,
-        certificate_chain: certificate_chain,
-        key: key
+        certificate,
+        certificate_chain,
+        key
       },
       old_fingerprint: CertFingerprint(f),
       old_names: vec!(hostname.to_string()),
@@ -322,7 +364,7 @@ fn order_command(channel: &mut Channel<CommandRequest,CommandResponse>, order: P
               ProxyRequestData::AddHttpFront(_) => info!("front added: {}", message.message),
               ProxyRequestData::RemoveHttpFront(_) => info!("front removed: {}", message.message),
               _ => {
-                // do nothing for now 
+                // do nothing for now
               }
             }
             return true;
