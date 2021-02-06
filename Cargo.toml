@@ -8,11 +8,11 @@ description = "command line tool to set up or renew Let's Encrypt certificates f
 authors = ["Geoffroy Couprie <contact@geoffroycouprie.com>"]
 
 [dependencies]
-log = "^0.4"
-rand = "^0.7"
-clap = "^2.19.0"
-mio-uds = "^0.6"
-tiny_http = "^0.7"
-acme-lib = "^0.8"
-pretty_env_logger = "^0.4"
-sozu-command-lib = "^0.11"
+log = "0.4.14"
+rand = "0.8.3"
+clap = "2.33.3"
+mio-uds = "0.6.8"
+tiny_http = "0.8.0"
+acme-lib = "0.8.1"
+pretty_env_logger = "0.4.0"
+sozu-command-lib = "0.11.52"
