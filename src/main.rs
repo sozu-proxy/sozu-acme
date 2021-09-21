@@ -1,10 +1,5 @@
 #[macro_use] extern crate log;
 #[macro_use] extern crate clap;
-extern crate rand;
-extern crate mio_uds;
-extern crate tiny_http;
-extern crate acme_lib;
-extern crate pretty_env_logger;
 extern crate sozu_command_lib as sozu_command;
 
 use std::{
@@ -14,10 +9,9 @@ use std::{
   io::Write,
 };
 use clap::{App, Arg};
-use mio_uds::UnixStream;
 use rand::{thread_rng, Rng, distributions::Alphanumeric};
 use tiny_http::{Server, Response};
-use acme_lib::{Error, Directory, DirectoryUrl};
+use acme_lib::{Directory, DirectoryUrl};
 use acme_lib::persist::FilePersist;
 use acme_lib::create_p384_key;
 use sozu_command::channel::Channel;
@@ -25,8 +19,8 @@ use sozu_command::{
   config::Config,
   certificate::{calculate_fingerprint, split_certificate_chain},
   command::{CommandRequestData, CommandRequest, CommandResponse, CommandStatus},
-  proxy::{ProxyRequestData, Backend, HttpFront, CertificateAndKey, CertFingerprint,
-    AddCertificate, RemoveBackend, ReplaceCertificate},
+  proxy::{ProxyRequestData, Backend, HttpFrontend, CertificateAndKey, CertificateFingerprint,
+    AddCertificate, RemoveBackend, ReplaceCertificate, Route, PathRule, RulePosition},
 };
 
 fn main() {
@@ -113,7 +107,7 @@ fn main() {
     .and_then(|file| calculate_fingerprint(&file));
 
   let config = Config::load_from_path(config_file).expect("could not parse configuration file");
-  let stream = UnixStream::connect(&config.command_socket).expect(&format!("could not connect to the command unix socket: {}", config.command_socket));
+  let stream = mio::net::UnixStream::connect(&config.command_socket).expect(&format!("could not connect to the command unix socket: {}", config.command_socket));
   let mut channel: Channel<CommandRequest,CommandResponse> = Channel::new(stream, 10000, 20000);
   channel.set_blocking(true);
 
@@ -247,17 +241,19 @@ fn generate_app_id(app_id: &str) -> String {
   format!("{}-ACME-{}", app_id, s)
 }
 
-fn set_up_proxying(channel: &mut Channel<CommandRequest,CommandResponse>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
+fn set_up_proxying(channel: &mut Channel<CommandRequest,CommandResponse>, frontend: &SocketAddr, cluster_id: &str, hostname: &str, path_begin: &str,
   server_address: SocketAddr) -> bool {
 
-  order_command(channel, ProxyRequestData::AddHttpFront(HttpFront {
+  order_command(channel, ProxyRequestData::AddHttpFrontend(HttpFrontend {
     address: frontend.clone(),
-    app_id: String::from(app_id),
+    route: Route::ClusterId(String::from(cluster_id)),
     hostname: String::from(hostname),
-    path_begin: String::from(path_begin)
+    path: PathRule::Prefix(String::from(path_begin)),
+    method: None,
+    position: RulePosition::Tree,
   })) && order_command(channel, ProxyRequestData::AddBackend(Backend {
-    app_id: String::from(app_id),
-    backend_id: format!("{}-0", app_id),
+    cluster_id: String::from(cluster_id),
+    backend_id: format!("{}-0", cluster_id),
     address: server_address,
     load_balancing_parameters: None,
     sticky_id: None,
@@ -265,16 +261,18 @@ fn set_up_proxying(channel: &mut Channel<CommandRequest,CommandResponse>, fronte
   }))
 }
 
-fn remove_proxying(channel: &mut Channel<CommandRequest,CommandResponse>, frontend: &SocketAddr, app_id: &str, hostname: &str, path_begin: &str,
+fn remove_proxying(channel: &mut Channel<CommandRequest,CommandResponse>, frontend: &SocketAddr, cluster_id: &str, hostname: &str, path_begin: &str,
   server_address: SocketAddr) -> bool {
-  order_command(channel, ProxyRequestData::RemoveHttpFront(HttpFront {
+  order_command(channel, ProxyRequestData::RemoveHttpFrontend(HttpFrontend {
     address: frontend.clone(),
-    app_id: String::from(app_id),
+    route: Route::ClusterId(String::from(cluster_id)),
     hostname: String::from(hostname),
-    path_begin: String::from(path_begin)
+    path: PathRule::Prefix(String::from(path_begin)),
+    method: None,
+    position: RulePosition::Tree,
   })) && order_command(channel, ProxyRequestData::RemoveBackend(RemoveBackend {
-    app_id: String::from(app_id),
-    backend_id: format!("{}-0", app_id),
+    cluster_id: String::from(cluster_id),
+    backend_id: format!("{}-0", cluster_id),
     address: server_address,
   }))
 }
@@ -308,24 +306,27 @@ fn add_certificate(channel: &mut Channel<CommandRequest,CommandResponse>,
 
   match old_fingerprint {
     None => return order_command(channel, ProxyRequestData::AddCertificate(AddCertificate {
-      front: frontend.clone(),
+      address: frontend.clone(),
       certificate: CertificateAndKey {
         certificate,
         certificate_chain,
-        key
+        key,
+        versions: vec![],
       },
       names: vec!(hostname.to_string()),
+      expired_at: None,
     })),
     Some(f) => return order_command(channel, ProxyRequestData::ReplaceCertificate(ReplaceCertificate {
-      front: frontend.clone(),
+      address: frontend.clone(),
       new_certificate: CertificateAndKey {
         certificate,
         certificate_chain,
-        key
+        key,
+        versions: vec![],
       },
-      old_fingerprint: CertFingerprint(f),
-      old_names: vec!(hostname.to_string()),
+      old_fingerprint: CertificateFingerprint(f),
       new_names: vec!(hostname.to_string()),
+      new_expired_at: None,
     })),
   }
 }
@@ -361,8 +362,8 @@ fn order_command(channel: &mut Channel<CommandRequest,CommandResponse>, order: P
               ProxyRequestData::RemoveBackend(_) => info!("backend removed : {} ", message.message),
               ProxyRequestData::AddCertificate(_) => info!("certificate added: {}", message.message),
               ProxyRequestData::RemoveCertificate(_) => info!("certificate removed: {}", message.message),
-              ProxyRequestData::AddHttpFront(_) => info!("front added: {}", message.message),
-              ProxyRequestData::RemoveHttpFront(_) => info!("front removed: {}", message.message),
+              ProxyRequestData::AddHttpFrontend(_) => info!("front added: {}", message.message),
+              ProxyRequestData::RemoveHttpFrontend(_) => info!("front removed: {}", message.message),
               _ => {
                 // do nothing for now
               }

@@ -6,13 +6,15 @@ categories = ["command-line-utilities"]
 repository = "https://github.com/sozu-proxy/sozu-acme"
 description = "command line tool to set up or renew Let's Encrypt certificates for sozu HTTP reverse proxy"
 authors = ["Geoffroy Couprie <contact@geoffroycouprie.com>"]
+edition = "2018"
 
 [dependencies]
 log = "^0.4"
 rand = "^0.8"
 clap = "^2.19.0"
-mio-uds = "^0.6"
+mio = { version = "^0.7", features = [ "udp" ] }
 tiny_http = "^0.8"
 acme-lib = "^0.8"
 pretty_env_logger = "^0.4"
-sozu-command-lib = "^0.11"
+#sozu-command-lib = "^0.11"
+sozu-command-lib = { git = "https://github.com/sozu-proxy/sozu", branch = "0.14" }
