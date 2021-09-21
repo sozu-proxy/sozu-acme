@@ -238,12 +238,12 @@ fn main() {
 }
 
 fn generate_id() -> String {
-  let s: String = iter::repeat(()).map(|()| thread_rng().sample(Alphanumeric)).take(6).collect();
+  let s: String = iter::repeat(()).map(|()| thread_rng().sample(Alphanumeric)).take(6).map(|c| c as char).collect();
   format!("ID-{}", s)
 }
 
 fn generate_app_id(app_id: &str) -> String {
-  let s: String = iter::repeat(()).map(|()| thread_rng().sample(Alphanumeric)).take(6).collect();
+  let s: String = iter::repeat(()).map(|()| thread_rng().sample(Alphanumeric)).take(6).map(|c| c as char).collect();
   format!("{}-ACME-{}", app_id, s)
 }
 
