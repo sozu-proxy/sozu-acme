@@ -1,5 +1,8 @@
 # sōzu-acme
 
+> This repository has been integrated into the main Sōzu repository. 
+> It is available directly from the command line of Sōzu.
+
 sozu-acme is a configuration tool for the
 [sōzu HTTP reverse proxy](https://github.com/sozu-proxy/sozu)
 that automates certificate requests from
